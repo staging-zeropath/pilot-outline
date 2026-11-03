@@ -1,0 +1,128 @@
+import { z } from "zod";
+import type { EmbedIntegrationSettings } from "@shared/types";
+import {
+  IntegrationService,
+  IntegrationType,
+  UserCreatableIntegrationService,
+} from "@shared/types";
+import { Integration } from "@server/models";
+import { Hook, PluginManager } from "@server/utils/PluginManager";
+import { BaseSchema } from "../schema";
+
+// Resolved on first parse, after plugins have registered their schemas.
+const pluginSettings = z.lazy((): z.ZodType<EmbedIntegrationSettings> => {
+  const schemas = PluginManager.getHooks(Hook.IntegrationSettings).flatMap(
+    (hook) => (hook.value.schema ? [hook.value.schema] : [])
+  );
+  return schemas.length ? z.union(schemas) : z.never();
+});
+
+export const IntegrationsListSchema = BaseSchema.extend({
+  body: z.object({
+    /** Integrations sorting direction */
+    direction: z
+      .string()
+      .optional()
+      .transform((val) => (val !== "ASC" ? "DESC" : val)),
+
+    /** Integrations sorting column */
+    sort: z
+      .string()
+      .refine((val) => Object.keys(Integration.getAttributes()).includes(val), {
+        error: "Invalid sort parameter",
+      })
+      .prefault("updatedAt"),
+
+    /** Integration type */
+    type: z.enum(IntegrationType).optional(),
+
+    /** Integration service */
+    service: z.enum(IntegrationService).optional(),
+  }),
+});
+
+export type IntegrationsListReq = z.infer<typeof IntegrationsListSchema>;
+
+export const IntegrationsCreateSchema = BaseSchema.extend({
+  body: z.object({
+    /** Integration type */
+    type: z.enum(IntegrationType),
+
+    /** Integration service */
+    service: z.enum(UserCreatableIntegrationService),
+
+    /** Integration config/settings */
+    settings: z
+      .object({ url: z.url() })
+      .or(
+        z.object({
+          url: z.url(),
+          channel: z.string(),
+          channelId: z.string(),
+        })
+      )
+      .or(
+        z.object({
+          measurementId: z.string(),
+          instanceUrl: z.url().optional(),
+          scriptName: z.string().optional(),
+        })
+      )
+      .or(z.object({ serviceTeamId: z.string() }))
+      .or(pluginSettings)
+      .optional(),
+  }),
+});
+
+export type IntegrationsCreateReq = z.infer<typeof IntegrationsCreateSchema>;
+
+export const IntegrationsUpdateSchema = BaseSchema.extend({
+  body: z.object({
+    /** Id of integration that needs update */
+    id: z.uuid(),
+
+    /** Integration config/settings */
+    settings: z
+      .object({ url: z.url() })
+      .or(
+        z.object({
+          url: z.url(),
+          channel: z.string(),
+          channelId: z.string(),
+        })
+      )
+      .or(
+        z.object({
+          measurementId: z.string(),
+          instanceUrl: z.url().optional(),
+          scriptName: z.string().optional(),
+        })
+      )
+      .or(z.object({ serviceTeamId: z.string() }))
+      .or(pluginSettings)
+      .optional(),
+
+    /** Integration events */
+    events: z.array(z.string()).optional(),
+  }),
+});
+
+export type IntegrationsUpdateReq = z.infer<typeof IntegrationsUpdateSchema>;
+
+export const IntegrationsInfoSchema = BaseSchema.extend({
+  body: z.object({
+    /** Id of integration to find */
+    id: z.uuid(),
+  }),
+});
+
+export type IntegrationsInfoReq = z.infer<typeof IntegrationsInfoSchema>;
+
+export const IntegrationsDeleteSchema = BaseSchema.extend({
+  body: z.object({
+    /** Id of integration to be deleted */
+    id: z.uuid(),
+  }),
+});
+
+export type IntegrationsDeleteReq = z.infer<typeof IntegrationsDeleteSchema>;
